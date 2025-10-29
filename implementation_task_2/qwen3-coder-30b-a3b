@@ -1,1 +1,105 @@
+#!/usr/bin/env python3
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
+
+def main():
+    #--- Init
+    rclpy.init()
+    navigator = BasicNavigator()
+    
+    #--- Set initial pose
+    initial_pose = PoseStamped()
+    initial_pose.header.frame_id = 'map'
+    initial_pose.header.stamp = navigator.get_clock().now().to_msg()
+    initial_pose.pose.position.x = 0.0
+    initial_pose.pose.position.y = 0.0
+    initial_pose.pose.position.z = 0.0
+    # Set orientation to identity (no rotation)
+    initial_pose.pose.orientation.x = 0.0
+    initial_pose.pose.orientation.y = 0.0
+    initial_pose.pose.orientation.z = 0.0
+    initial_pose.pose.orientation.w = 1.0
+    
+    navigator.setInitialPose(initial_pose)
+    
+    #--- Wait for Nav2
+    navigator.waitUntilNav2Active()
+    
+    #--- Send Nav2 goal
+    # Since we're setting initial pose, we don't need to send a separate goal here
+    # But we can set a dummy goal to test navigation
+    # goal = PoseStamped()
+    # goal.header.frame_id = 'map'
+    # goal.header.stamp = navigator.get_clock().now().to_msg()
+    # goal.pose.position.x = 1.0
+    # goal.pose.position.y = 1.0
+    # goal.pose.position.z = 0.0
+    # goal.pose.orientation.x = 0.0
+    # goal.pose.orientation.y = 0.0
+    # goal.pose.orientation.z = 0.0
+    # goal.pose.orientation.w = 1.0
+    # navigator.goToPose(goal)
+    
+    #--- Follow waypoints
+    waypoints = [
+        (2.0, -2.0, 1.57),
+        (4.0, 0.8, 0.0),
+        (8.0, 1.0, -1.57),
+        (8.0, -0.5, 1.57),
+        (5.0, 5.0, 3.14),
+        (3.0, 4.0, 1.57),
+        (4.0, 5.0, 0.0),
+        (5.0, 3.0, -1.57),
+        (4.0, 0.8, 3.14),
+        (-4.0, 3.5, -1.57),
+        (-4.0, 0.0, 1.57)
+    ]
+    
+    # Convert waypoints to PoseStamped messages
+    pose_list = []
+    for i, (x, y, z) in enumerate(waypoints):
+        pose = PoseStamped()
+        pose.header.frame_id = 'map'
+        pose.header.stamp = navigator.get_clock().now().to_msg()
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.position.z = 0.0  # We only care about x, y, z positions
+        
+        # Generate quaternion from yaw (z component) to keep consistent orientation behavior
+        # Using tf_transformations to create quaternion from Euler angles (0, 0, z)
+        quaternion = tf_transformations.quaternion_from_euler(0, 0, z)
+        
+        pose.pose.orientation.x = quaternion[0]
+        pose.pose.orientation.y = quaternion[1]
+        pose.pose.orientation.z = quaternion[2]
+        pose.pose.orientation.w = quaternion[3]
+        
+        pose_list.append(pose)
+    
+    # Send each waypoint sequentially
+    for i, pose in enumerate(pose_list):
+        navigator.goToPose(pose)
+        
+        # Check feedback during navigation (optional)
+        while not navigator.isTaskComplete():
+            # Optional: process feedback if needed
+            pass
+            
+        # Get result after completing each waypoint
+        result = navigator.getResult()
+        if result == 1:  # NAVIGATION_COMPLETE
+            print(f"Waypoint {i+1} reached successfully")
+        elif result == 2:  # NAVIGATION_FAILED
+            print(f"Waypoint {i+1} failed to reach")
+        else:
+            print(f"Waypoint {i+1} status unknown")
+
+    #--- Shutdown
+    navigator.lifecycleShutdown()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
 
