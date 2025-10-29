@@ -1,0 +1,62 @@
+ROS 2 Autonomous Mobile Robot Architecture
+1. Node List and Responsibilities
+Core Navigation Nodes
+o	map_server: Loads and serves the static map from file to other nodes
+o	amcl: Performs particle filter-based localization using laser scans and odometry
+o	planner_server: Implements global path planning algorithms (A*, Dijkstra, etc.)
+o	controller_server: Executes local path following with velocity control
+o	behavior_server: Manages high-level decision making and behavior switching
+State Management
+o	state_machine: Central logic coordinator that manages robot states (idle, navigating, obstacle avoidance, etc.)
+o	goal_checker: Validates and processes incoming goal poses
+Sensor Integration
+o	laser_scan_processor: Preprocesses raw laser scan data for navigation
+o	odometry_publisher: Integrates wheel encoders to provide robot pose estimates
+Visualization & Monitoring
+o	rviz: Real-time visualization of map, paths, sensors, and robot status
+o	robot_state_publisher: Publishes robot's TF tree for coordinate transformations
+Communication Bridge
+o	bridge_node: Handles communication between different ROS versions if needed
+2. Key Topics, Message Types, and Node Connections
+Topic	Message Type	Publisher	Subscriber(s)
+/scan	sensor_msgs/LaserScan	laser_scan_processor	amcl, planner_server, controller_server
+/odom	nav_msgs/Odometry	odometry_publisher	amcl, planner_server, controller_server
+/map	nav_msgs/OccupancyGrid	map_server	amcl, planner_server
+/cmd_vel	geometry_msgs/Twist	controller_server	motion_controller
+/goal_pose	geometry_msgs/PoseStamped	user_interface	state_machine, goal_checker
+/path	nav_msgs/Path	planner_server	rviz, controller_server
+/initialpose	geometry_msgs/PoseWithCovarianceStamped	rviz, teleop	amcl
+/tf	tf2_msgs/TFMessage	robot_state_publisher, amcl	all nodes requiring coordinate transforms
+3. Data Flow Explanation
+Input Processing Chain
+1.	Sensor Data Collection:
+o	Laser scanner continuously publishes /scan topic at ~10Hz
+o	Wheel encoders integrate to provide /odom pose information
+o	Static map loaded by map_server and published on /map
+2.	Localization:
+o	AMCL subscribes to /scan, /odom, and /map
+o	Uses particle filtering to determine robot's position within the map
+o	Publishes /tf transforms and updates robot state
+3.	Path Planning:
+o	Planner receives goal via /goal_pose and current position from /odom
+o	Performs global path planning through obstacle-free waypoints
+o	Publishes /path topic for visualization and local control
+4.	Motion Control:
+o	Controller receives /path and current /odom pose
+o	Implements local navigation algorithms like Dynamic Window Approach (DWA)
+o	Calculates appropriate linear and angular velocities in /cmd_vel
+5.	Execution:
+o	Motion controller node converts /cmd_vel commands to actual motor signals
+o	Feedback loop continuously adjusts based on real-time sensor data
+Complete Flow Sequence
+[User] → /goal_pose → [State Machine] → [Planner Server] → /path
+                     ↘                        ↘
+                     [Goal Checker]            [Map Server]
+                                               ↗
+[Sensor Data] → [Laser/IMU/Odom] → [AMCL] → [Pose Estimation]
+                                               ↘
+                                        [Controller Server] → /cmd_vel
+                                               ↗
+[Odometry + Map] ← [Path Calculation]
+This architecture provides robust navigation capabilities with clear separation of concerns, enabling scalable component replacement and maintenance.
+
