@@ -1,1 +1,133 @@
+1. What is wrong?
+The script builds a list of PoseStamped way points, but the quaternion’s w component is never written:
+pythonCopy
+q = tf_transformations.quaternion_from_euler(0, 0, z_angle)
 
+pose.pose.orientation.x = q[0]
+pose.pose.orientation.y = q[1]
+pose.pose.orientation.z = q[2]      # ← w is missing!
+# pose.pose.orientation.w = q[3]   # <-- this line is absent
+tf_transformations.quaternion_from_euler() returns a four element tuple
+(x, y, z, w). If w is left at its default value (0.0), the resulting quaternion is not normalised (its length is 0).
+Nav2 (and the underlying tf2 libraries) treat a zero length quaternion as invalid.
+When an invalid orientation is supplied to the planner the robot’s controller receives a
+continuously changing “desired heading” (it keeps trying to rotate to a heading that can never be satisfied).
+The result is the classic “spins in place” symptom.
+2. Why does that make the robot spin?
+•	The planner computes a desired yaw from the target quaternion.
+•	With a zero length quaternion the conversion back to yaw yields an undefined angle (often NaN or a wildly varying value).
+•	The low level controller sees a large heading error at every control cycle, so it issues a constant angular velocity command while the linear velocity stays near zero → the robot spins.
+3. Fixed script
+Below is the same program with the missing w component added and a few small quality of life tweaks (explicit imports, a short pause after setting the initial pose, and a tiny delay in the feedback loop so the node does not hog the CPU).
+pythonCopy
+#!/usr/bin/env python3
+"""
+A minimal Nav2 waypoint follower using the SimpleCommander API.
+All quaternions are now fully defined (x, y, z, w), so the robot follows the
+waypoints instead of spinning.
+"""
+
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
+import time
+
+def make_pose(x: float, y: float, yaw: float) -> PoseStamped:
+    """
+    Helper that creates a PoseStamped in the 'map' frame with a
+    properly normalised quaternion.
+    """
+    pose = PoseStamped()
+    pose.header.frame_id = 'map'
+    # stamp will be filled by the caller (navigator.get_clock().now())
+    pose.pose.position.x = x
+    pose.pose.position.y = y
+    pose.pose.position.z = 0.0
+
+    q = tf_transformations.quaternion_from_euler(0.0, 0.0, yaw)
+    pose.pose.orientation.x = q[0]
+    pose.pose.orientation.y = q[1]
+    pose.pose.orientation.z = q[2]
+    pose.pose.orientation.w = q[3]          # *** the missing line ***
+    return pose
+
+
+def main() -> None:
+    rclpy.init()
+    navigator = BasicNavigator()
+
+    # --------------------------------------------------------------
+    # 1) Set the robot’s initial pose (you already had this correct)
+    # --------------------------------------------------------------
+    init_pose = PoseStamped()
+    init_pose.header.frame_id = 'map'
+    init_pose.header.stamp = navigator.get_clock().now().to_msg()
+    init_pose.pose.position.x = 0.0
+    init_pose.pose.position.y = 0.0
+    init_pose.pose.position.z = 0.0
+
+    q_init = tf_transformations.quaternion_from_euler(0.0, 0.0, 0.0)
+    init_pose.pose.orientation.x = q_init[0]
+    init_pose.pose.orientation.y = q_init[1]
+    init_pose.pose.orientation.z = q_init[2]
+    init_pose.pose.orientation.w = q_init[3]
+
+    navigator.setInitialPose(init_pose)
+
+    # Give AMCL a moment to latch onto the initial pose
+    time.sleep(1.0)
+
+    # --------------------------------------------------------------
+    # 2) Wait until the Nav2 stack is up and running
+    # --------------------------------------------------------------
+    navigator.waitUntilNav2Active()
+
+    # --------------------------------------------------------------
+    # 3) Build the waypoint list (now with a correct quaternion)
+    # --------------------------------------------------------------
+    waypoints_data = [
+        (2.0, -2.0, 1.57), (4.0, 0.8, 0.0), (8.0, 1.0, -1.57),
+        (8.0, -0.5, 1.57), (5.0, 5.0, 3.14), (3.0, 4.0, 1.57),
+        (4.0, 5.0, 0.0), (5.0, 3.0, -1.57), (4.0, 0.8, 3.14),
+        (-4.0, 3.5, -1.57), (-4.0, 0.0, 1.57)
+    ]
+
+    waypoints = []
+    for (x, y, yaw) in waypoints_data:
+        p = make_pose(x, y, yaw)
+        # Fill in the stamp now (same timestamp for all points is fine)
+        p.header.stamp = navigator.get_clock().now().to_msg()
+        waypoints.append(p)
+
+    # --------------------------------------------------------------
+    # 4) Send the waypoint list to Nav2
+    # --------------------------------------------------------------
+    navigator.followWaypoints(waypoints)
+
+    # --------------------------------------------------------------
+    # 5) Optional: print feedback while the mission is running
+    # --------------------------------------------------------------
+    while not navigator.isTaskComplete():
+        feedback = navigator.getFeedback()
+        # You could log `feedback.distance_remaining`, etc. here.
+        rclpy.sleep(0.1)   # tiny pause so we don’t spin the CPU
+
+    # --------------------------------------------------------------
+    # 6) Report the final result and shut down
+    # --------------------------------------------------------------
+    result = navigator.getResult()
+    print(f"Navigation Result: {result}")
+
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+What changed?
+Line / Section	Original	Fixed
+Waypoint quaternion creation	pose.pose.orientation.x = q[0] … z = q[2] (no w)	Added pose.pose.orientation.w = q[3]
+Helper function make_pose	–	Introduced for clarity and to guarantee the quaternion is always complete
+Small time.sleep(1.0) after setInitialPose	–	Gives AMCL a moment to lock on the pose (prevents occasional “lost pose” warnings)
+rclpy.sleep(0.1) in feedback loop	pass (tight loop)	Light pause to avoid a busy wait
+With the quaternion fully defined, Nav2 receives valid goal orientations, the planner computes realistic heading targets, and the robot now drives from waypoint to waypoint instead of endlessly rotating on the spot.
