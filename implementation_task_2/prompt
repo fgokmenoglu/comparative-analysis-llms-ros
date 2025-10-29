@@ -1,0 +1,27 @@
+Act as a ROS2 developer. Your task is to complete the Python code given below in reference to the following notes:
+
+1. For your convenience, header files to be used in this code are given. This shall be enough to make the program up and running.
+2. Inside main block, there are line comments that tells you what you shall be providing code for. Don't change these line comments. You can add extra comments.
+3. Providing a code that is performant in terms of both execution time and resource utilization is a plus. Pay attention to it.
+4. A pose value consists of position and orientation. Position has three components; namely, x, y and z. Orientation has four components; namely, x, y, z, and w.
+5. For poses, only position.x, position.y and position.z values are to be provided. Make sure the code manages the necessary transformations for the orientation components' values.
+6. The position values for the initial pose are 0.0, 0.0 and 0.0 for position.x, position.y and position.z respectively.
+7. The remaining positions values for the following poses in the waypoints list are as follows (the format is as x, y, z): (2.0, -2.0, 1.57) (4.0, 0.8, 0.0) (8.0, 1.0, -1.57) (8.0, -0.5, 1.57) (5.0, 5.0, 3.14) (3.0, 4.0, 1.57) (4.0, 5.0, 0.0) (5.0, 3.0, -1.57) (4.0, 0.8, 3.14) (-4.0, 3.5, -1.57) (-4.0, 0.0, 1.57)
+8. Getting navigation feedback within the code (no need for printing) is recommended.
+9. Make sure that the navigation result is printed.
+
+#!/usr/bin/env python3
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
+
+def main():
+#--- Init
+#--- Set initial pose
+#--- Wait for Nav2
+#--- Send Nav2 goal
+#--- Follow waypoints
+#--- Shutdown
+if __name__ == '__main__':
+main()
