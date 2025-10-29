@@ -1,0 +1,77 @@
+Act as an expert ROS 2 debugger. The following Python Nav2 script is intended to make a robot follow waypoints, but it fails. When run, the robot just spins in place.
+
+** Task: **
+1. Identify the specific bug(s) in the code.
+2. Explain *why* this bug causes the robot to spin.
+3. Provide the fully corrected Python script that will successfully navigate the waypoints.
+
+#!/usr/bin/env python3
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
+
+def main():
+    #--- Init
+    rclpy.init()
+    navigator = BasicNavigator()
+
+    #--- Set initial pose
+    initial_pose = PoseStamped()
+    initial_pose.header.frame_id = 'map'
+    initial_pose.header.stamp = navigator.get_clock().now().to_msg()
+    initial_pose.pose.position.x = 0.0
+    initial_pose.pose.position.y = 0.0
+    initial_pose.pose.position.z = 0.0
+    # Initial pose orientation (assuming 0 yaw)
+    initial_pose.pose.orientation.x = 0.0
+    initial_pose.pose.orientation.y = 0.0
+    initial_pose.pose.orientation.z = 0.0
+    initial_pose.pose.orientation.w = 1.0
+    navigator.setInitialPose(initial_pose)
+
+    #--- Wait for Nav2
+    navigator.waitUntilNav2Active()
+
+    #--- Send Nav2 goal
+    # Define waypoints as (x, y, z_angle)
+    waypoints_data = [
+        (2.0, -2.0, 1.57), (4.0, 0.8, 0.0), (8.0, 1.0, -1.57), (8.0, -0.5, 1.57),
+        (5.0, 5.0, 3.14), (3.0, 4.0, 1.57), (4.0, 5.0, 0.0), (5.0, 3.0, -1.57),
+        (4.0, 0.8, 3.14), (-4.0, 3.5, -1.57), (-4.0, 0.0, 1.57)
+    ]
+    
+    waypoints = []
+    for (x, y, z_angle) in waypoints_data:
+        pose = PoseStamped()
+        pose.header.frame_id = 'map'
+        pose.header.stamp = navigator.get_clock().now().to_msg()
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.position.z = 0.0  # z position is always 0
+
+        pose.pose.orientation.x = 0.0
+        pose.pose.orientation.y = 0.0
+        pose.pose.orientation.z = z_angle 
+        pose.pose.orientation.w = 0.0 
+        # ------------------------
+
+        waypoints.append(pose)
+
+    #--- Follow waypoints
+    navigator.followWaypoints(waypoints)
+
+    #--- Get navigation feedback (as requested in prompt)
+    while not navigator.isTaskComplete():
+        feedback = navigator.getFeedback()
+        # You can print feedback here if needed
+        pass
+
+    #--- Shutdown
+    result = navigator.getResult()
+    print(f"Navigation Result: {result}")
+    
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
