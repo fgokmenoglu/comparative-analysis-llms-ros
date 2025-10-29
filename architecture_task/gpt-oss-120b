@@ -1,0 +1,191 @@
+Autonomous Mobile Robot Software Architecture (ROS 2 – “nav2” based)
+Below is a complete, production grade architecture for a differential drive robot equipped with a 2 D LiDAR.
+It is expressed in ROS 2 Foxy/Fortress (any later distribution works the same) and uses the Nav2 stack as the core navigation backbone, extended with a few custom nodes for mission handling, safety, and diagnostics.
+________________________________________
+1. High Level Block Diagram (textual)
+markdownCopy
++---------------------------+
+               |  Mission / UI (rqt, web)  |
+               +------------+--------------+
+                            |
+                            v
+               +------------+--------------+
+               |   Goal Manager (node)     |
+               +------------+--------------+
+                            |
+                            v
+   +--------+   +-----------+-----------+   +-------------------+
+   | LiDAR  |-->|       Sensor Fusion   |<--|   IMU (optional)  |
+   +--------+   +-----------+-----------+   +-------------------+
+                            |
+                            v
+               +------------+--------------+
+               |   Localization (amcl)      |
+               +------------+--------------+
+                            |
+                            v
+               +------------+--------------+
+               |   Nav2 Planning & Control |
+               |   (planner, controller,   |
+               |    costmap, behavior tree)|
+               +------------+--------------+
+                            |
+                            v
+               +------------+--------------+
+               |  Diff Drive Driver (node) |
+               +------------+--------------+
+                            |
+                            v
+               +------------+--------------+
+               |   Motor Controllers (CAN) |
+               +---------------------------+
+
+(Parallel side cars)
+   • Map Server  → provides static map
+   • tf2 tree    → odom → base_link → laser_frame …
+   • Diagnostics / health monitor
+   • Safety Stop (hardware watchdog)
+________________________________________
+2. ROS 2 Nodes & Their Responsibilities
+#	Node (Package)	Type (Lifecycle / Composable)	Main Responsibility
+1	map_server (nav2_map_server)	Lifecycle	Loads the static occupancy grid (.yaml/.pgm) and serves /map.
+2	amcl (nav2_amcl)	Lifecycle	Particle filter localization using /scan + /odom → publishes /amcl_pose and /particlecloud.
+3	laser_filter_node (laser_filters)	Composable	Optionally filters raw LiDAR (/scan) (e.g., noise, min/max range, angle clipping).
+4	sensor_fusion (robot_localization)	Lifecycle	Fuses wheel odom, IMU, and optionally visual odometry → publishes fused /odometry/fused.
+5	costmap_2d (nav2_costmap_2d) – global_costmap & local_costmap	Lifecycle	Builds static + dynamic obstacle layers from map, laser, and robot footprint.
+6	planner_server (nav2_planner)	Lifecycle	Generates a global path (nav_msgs/Path) from start to goal using plugins (e.g., SmacPlannerHybrid).
+7	controller_server (nav2_controller)	Lifecycle	Tracks the global path locally, outputs velocity commands (/cmd_vel).
+8	bt_navigator (nav2_bt_navigator)	Lifecycle	Executes a behavior tree mission (navigate to goal, retry, cancel, recovery).
+9	lifecycle_manager (nav2_lifecycle_manager)	Lifecycle	Starts/stops the whole Nav2 stack in the correct order.
+10	goal_pose_server (custom)	Stateless / composable	Exposes a service /set_goal_pose (or action) that other UI/mission nodes call.
+11	diff_drive_controller (nav2_controller/ros2_control driver)	Stateless	Subscribes to /cmd_vel, converts to wheel joint commands (/cmd_vel_left, /cmd_vel_right).
+12	diagnostics_aggregator (diagnostics)	Stateless	Collects /diagnostics from all nodes, publishes /diagnostics.
+13	safety_stop (custom)	Stateless	Monitors emergency topics (/estop, bumper, watchdog) → publishes zero velocity on /cmd_vel with higher QoS.
+14	tf2_ros static_transform_publisher	Stateless	Publishes static transforms: map → odom, base_link → laser, base_link → wheel_left/right.
+15	rviz2 (visualisation)	UI	Subscribes to map, pose, path, costmaps, laser, etc. (not part of runtime).
+All nodes are launched via a single composable launch file (nav2_bringup.launch.py) that places the heavy weight nodes (map_server, amcl, planner, controller, bt_navigator, costmap) in a container for low latency intra process comms.
+________________________________________
+3. Core Topics (Message Types & Direction)
+Topic	Message Type	Publisher(s)	Subscriber(s)
+/scan	sensor_msgs/msg/LaserScan	laser_filter_node (raw LiDAR driver) → filtered scan	amcl, costmap_2d (local), laser_filter_node (if re publishing)
+/odom	nav_msgs/msg/Odometry	Wheel odometry driver (e.g., diff_drive_controller or robot_localization raw source)	sensor_fusion (robot_localization)
+/odometry/fused	nav_msgs/msg/Odometry	sensor_fusion (robot_localization)	amcl, planner_server (optional), controller_server
+/amcl_pose	geometry_msgs/msg/PoseWithCovarianceStamped	amcl	bt_navigator, rviz2, any UI
+/particlecloud	geometry_msgs/msg/PoseArray	amcl	Debug/visualisation
+/map	nav_msgs/msg/OccupancyGrid	map_server	amcl, costmap_2d (global), rviz2
+/tf	tf2_msgs/msg/TFMessage	tf2_static_transform_publisher, all nodes that broadcast TF (e.g., amcl publishes map→odom)	Everyone that needs transforms
+/tf_static	tf2_msgs/msg/TFMessage	static_transform_publisher	All
+/global_costmap/costmap	nav2_msgs/msg/Costmap	costmap_2d (global)	planner_server
+/local_costmap/costmap	nav2_msgs/msg/Costmap	costmap_2d (local)	controller_server
+/plan	nav_msgs/msg/Path	planner_server	controller_server, bt_navigator
+/cmd_vel	geometry_msgs/msg/Twist	controller_server (or safety_stop if engaged)	diff_drive_controller
+/cmd_vel_left, /cmd_vel_right	std_msgs/msg/Float64	diff_drive_controller (translates Twist)	Wheel motor drivers (CAN/serial)
+/goal_pose	geometry_msgs/msg/PoseStamped	goal_pose_server (via action/ service)	bt_navigator (starts navigation)
+/navigate_to_pose	nav2_msgs/action/NavigateToPose	bt_navigator (action server)	UI/mission client
+/diagnostics	diagnostic_msgs/msg/DiagnosticArray	All nodes (via diagnostics_aggregator)	diagnostics_aggregator, rviz2
+/estop	std_msgs/msg/Bool	Emergency hardware, UI	safety_stop
+QoS notes:
+•	/scan and /odom use sensor data QoS (reliable=false, depth=10).
+•	/cmd_vel uses best effort, keep last=1 to guarantee latest command.
+•	/map, /global_costmap/*, /local_costmap/* use reliable, transient_local (so late joining nodes get the latest map).
+________________________________________
+4. End to End Data Flow
+Below is the step by step path from raw sensors to motor actuation, annotated with the responsible node at each stage.
+1.	LiDAR driver → laser_filter_node
+•	Raw packets → sensor_msgs/LaserScan on /scan_raw.
+•	laser_filter_node removes out of range points, applies a median filter, republishes filtered scan on /scan.
+2.	Wheel encoders → diff_drive_controller (or a low level driver)
+•	Publishes raw wheel odometry (/odom_raw).
+3.	Fusion (robot_localization)
+•	Subscribes to /odom_raw and (optionally) /imu/data.
+•	Runs an EKF → publishes /odometry/fused (high rate, low latency).
+4.	Localization (amcl)
+•	Subscribes to /scan and /odometry/fused.
+•	Uses the static map (/map) to compute a posterior over robot pose.
+•	Publishes /amcl_pose (best estimate) and /particlecloud.
+5.	Transform Tree
+•	amcl also publishes a dynamic transform map → odom (the “localization offset”).
+•	Static transforms: map → base_link, base_link → laser, base_link → wheel_left/right.
+6.	Costmap Construction
+•	Global Costmap: builds from static map + robot footprint → /global_costmap.
+•	Local Costmap: builds from latest /scan, robot footprint, and dynamic obstacles → /local_costmap.
+7.	Goal Reception
+•	UI or mission planner calls /set_goal_pose (service) or sends a NavigateToPose action to /navigate_to_pose.
+•	goal_pose_server validates and forwards the pose to the bt_navigator behavior tree (node 8).
+8.	Behavior Tree (bt_navigator)
+•	Starts a NavigateToPose BT which orchestrates the following sub tasks:
+a. Planner → request global path (/plan).
+b. Controller → follow the path while monitoring local costmap.
+c. Recovery → if controller fails, invoke recovery behaviors (clear costmap, rotate in place, etc.).
+9.	Planner (planner_server)
+•	Receives start pose (from /amcl_pose) and goal pose.
+•	Queries the global costmap, runs hybrid A* / Dijkstra → publishes /plan (nav_msgs/Path).
+10.	Controller (controller_server)
+•	Subscribes to /plan, /odometry/fused, /local_costmap.
+•	Runs a trajectory controller (e.g., DWB, Regulated Pure Pursuit).
+•	Emits a velocity command on /cmd_vel at ~20 Hz.
+11.	Safety Stop (parallel)
+•	Monitors /estop, bumper topics, and a watchdog on /cmd_vel.
+•	If any condition triggers, it overwrites the command with a zero Twist (higher QoS) to ensure immediate stop.
+12.	Diff Drive Driver (diff_drive_controller)
+•	Receives /cmd_vel → splits into left/right wheel velocities.
+•	Publishes wheel command topics (/cmd_vel_left, /cmd_vel_right) which are translated to the motor controller (CAN, serial, etc.).
+13.	Motor Controllers → Motors
+•	Low level firmware drives the wheels, closes the loop with encoders (feeding back to step 2).
+14.	Feedback Loop
+•	Wheel encoders → step 2 → step 3 → step 4 → … continues at 50 100 Hz, giving the system a tight closed loop.
+15.	Diagnostics & Visualization
+•	Each node emits diagnostic messages → diagnostics_aggregator → /diagnostics.
+•	RViz subscribes to map, costmaps, laser, pose, path, and diagnostics for operator monitoring.
+________________________________________
+5. Recommended Launch & Configuration Structure
+markdownCopy
+launch/
+│   nav2_bringup.launch.py          # composable container, lifecycle manager
+│   robot_state_publisher.launch.py # static TFs + URDF
+│   safety.launch.py                # estop & watchdog
+│   diagnostics.launch.py           # diagnostics aggregator
+│   ui.launch.py                    # optional rqt/rviz
+config/
+│   robot.yaml          # robot description (footprint, wheel radius, etc.)
+│   nav2_params.yaml    # all Nav2 parameters (planner, controller, costmap)
+│   amcl_params.yaml
+│   ekf.yaml            # robot_localization
+│   map.yaml            # path to .pgm + metadata
+│   safety.yaml         # estop topics, timeout values
+Key parameter highlights
+Parameter	Reason
+controller_server → DWB plugin with velocity_scaling_factor=0.5 (smooth in tight aisles)	
+costmap_2d → inflation_layer radius = robot radius + 0.1 m	
+amcl → particle_filter count = 500 (good trade off for indoor maps)	
+planner_server → SmacPlannerHybrid with allow_unknown = false	
+bt_navigator → recovery sequence: clear_costmap → rotate_in_place → backtrack	
+robot_state_publisher → use_sim_time = false (real hardware)	
+safety_stop → estop_timeout = 0.1 s (hard stop)	
+________________________________________
+6. Production Ready Extras (optional but recommended)
+Feature	Node / Package	Why it matters
+Health monitoring	nav2_lifecycle_manager + custom watchdog	Auto restart nodes if any lifecycle fails.
+Logging & Replay	rosbag2 (record /scan, /odom, /amcl_pose, /cmd_vel)	Post mortem analysis of incidents.
+Remote monitoring	ros2_web_bridge + web UI	Operators can see pose, map, and issue goals from a browser.
+Dynamic Reconfiguration	dynamic_params (rclcpp::parameter_event)	Tune controller gains on the fly without restart.
+Security	DDS security (SROS2)	Authenticate UI and remote operators.
+Simulation	nav2_simulation launch (Gazebo or Ignition)	CI pipeline runs navigation tests in headless mode.
+Testing	ament_lint, ament_uncrustify, launch_testing	Enforce code style and verify launch order.
+________________________________________
+7. Summary Checklist (copy paste for project README)
+•	 Robot description (URDF + static TFs) – includes LiDAR frame and wheel joints.
+•	 Map (.pgm/.yaml) placed in maps/.
+•	 Launch nav2_bringup.launch.py (composable) with lifecycle manager.
+•	 Parameters tuned (nav2_params.yaml, amcl_params.yaml, ekf.yaml).
+•	 Goal interface (/navigate_to_pose action) exposed to UI/mission planner.
+•	 Safety stop node subscribed to /estop and publishing override /cmd_vel.
+•	 Diagnostics aggregated and visualised in RViz/rqt_robot_monitor.
+•	 CI runs launch_testing with Gazebo to verify navigation to a series of random goals.
+With the above architecture the robot will:
+1.	Localise reliably on a known map using AMCL.
+2.	Plan a collision free global trajectory to any user provided goal.
+3.	Track that trajectory while reacting to dynamic obstacles via the local costmap.
+4.	Stop safely instantly if an emergency condition occurs.
+All components are modular, lifecycle aware, and composable, making the system easy to extend (e.g., add a 3 D depth camera, SLAM for unknown environments, or multi robot coordination) while keeping the real time control loop tight enough for a differential drive platform.
+
