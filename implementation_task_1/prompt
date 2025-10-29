@@ -1,0 +1,23 @@
+Act as a ROS2 developer. Your task is to complete the C++ code given below in reference to the following notes:
+
+1. For your convenience, header files to be used in this code are given. This shall be enough to make the program up and running.
+2. Inside main block, there are line comments that tells you what you shall be providing code for. Don't change these line comments. You can add extra comments.
+3. Providing a code that is performant in terms of both execution time and resource utilization is a plus. Pay attention to it.
+4. The node name will be hello_moveit. Use the same name for the logger as well.
+5. The robot to be used is Panda Arm so use panda_arm as parameter in the corresponding part of the code.
+6. The target pose orientation is 1.0. As for position values of x, y and z, they are 0.28, -0.2 and 0.5 respectively.
+7. An error message such as "Planning failed!" would be nice to show in case of an error while executing the plan.
+
+#include <memory>
+#include <rclcpp/rclcpp.hpp>
+#include <moveit/move_group_interface/move_group_interface.h>
+
+int main (int argc, char * argv[]) {
+// Initialize ROS and create the Node
+// Create a ROS logger
+// Create the MoveIt MoveGroup Interface
+// Set a target Pose
+// Create a plan to that target pose
+// Execute the plan
+// Shutdown ROS
+}
