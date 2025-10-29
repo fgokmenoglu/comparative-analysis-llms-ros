@@ -1,1 +1,97 @@
+#!/usr/bin/env python3
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
+
+def create_pose_stamped(navigator, position_x, position_y, orientation_z):
+    """
+    Create a PoseStamped message with position and orientation from yaw angle.
+    
+    Args:
+        navigator: BasicNavigator instance
+        position_x: X position coordinate
+        position_y: Y position coordinate
+        orientation_z: Yaw angle in radians
+    
+    Returns:
+        PoseStamped message
+    """
+    pose = PoseStamped()
+    pose.header.frame_id = 'map'
+    pose.header.stamp = navigator.get_clock().now().to_msg()
+    
+    # Set position
+    pose.pose.position.x = position_x
+    pose.pose.position.y = position_y
+    pose.pose.position.z = 0.0
+    
+    # Convert yaw angle to quaternion for orientation
+    quaternion = tf_transformations.quaternion_from_euler(0.0, 0.0, orientation_z)
+    pose.pose.orientation.x = quaternion[0]
+    pose.pose.orientation.y = quaternion[1]
+    pose.pose.orientation.z = quaternion[2]
+    pose.pose.orientation.w = quaternion[3]
+    
+    return pose
+
+def main():
+    #--- Init
+    rclpy.init()
+    navigator = BasicNavigator()
+    
+    #--- Set initial pose
+    initial_pose = create_pose_stamped(navigator, 0.0, 0.0, 0.0)
+    navigator.setInitialPose(initial_pose)
+    
+    #--- Wait for Nav2
+    navigator.waitUntilNav2Active()
+    
+    #--- Send Nav2 goal
+    # Define waypoints list with (x, y, yaw) tuples
+    waypoint_data = [
+        (2.0, -2.0, 1.57),
+        (4.0, 0.8, 0.0),
+        (8.0, 1.0, -1.57),
+        (8.0, -0.5, 1.57),
+        (5.0, 5.0, 3.14),
+        (3.0, 4.0, 1.57),
+        (4.0, 5.0, 0.0),
+        (5.0, 3.0, -1.57),
+        (4.0, 0.8, 3.14),
+        (-4.0, 3.5, -1.57),
+        (-4.0, 0.0, 1.57)
+    ]
+    
+    # Create PoseStamped messages for all waypoints
+    waypoints = [create_pose_stamped(navigator, x, y, yaw) for x, y, yaw in waypoint_data]
+    
+    #--- Follow waypoints
+    navigator.followWaypoints(waypoints)
+    
+    # Get navigation feedback (monitoring progress)
+    while not navigator.isTaskComplete():
+        feedback = navigator.getFeedback()
+        # Feedback is being retrieved but not printed as per requirements
+        # This allows monitoring of navigation progress internally
+    
+    # Get final result
+    result = navigator.getResult()
+    
+    # Print navigation result
+    if result == BasicNavigator.TaskResult.SUCCEEDED:
+        print('Navigation succeeded! All waypoints reached successfully.')
+    elif result == BasicNavigator.TaskResult.CANCELED:
+        print('Navigation was canceled.')
+    elif result == BasicNavigator.TaskResult.FAILED:
+        print('Navigation failed.')
+    else:
+        print(f'Navigation completed with result: {result}')
+    
+    #--- Shutdown
+    navigator.lifecycleShutdown()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
 
