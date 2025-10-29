@@ -1,1 +1,85 @@
+#!/usr/bin/env python3
+
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
+
+def main():
+    #--- Init
+    rclpy.init()
+    navigator = BasicNavigator()
+
+    #--- Set initial pose
+    initial_pose = PoseStamped()
+    initial_pose.header.frame_id = 'map'
+    initial_pose.header.stamp = navigator.get_clock().now().to_msg()
+    initial_pose.pose.position.x = 0.0
+    initial_pose.pose.position.y = 0.0
+    initial_pose.pose.position.z = 0.0
+    initial_pose.pose.orientation.x = 0.0
+    initial_pose.pose.orientation.y = 0.0
+    initial_pose.pose.orientation.z = 0.0
+    initial_pose.pose.orientation.w = 1.0
+
+    navigator.setInitialPose(initial_pose)
+
+    #--- Wait for Nav2
+    navigator.waitUntilNav2Active()
+
+    #--- Send Nav2 goal
+    waypoints = [
+        (2.0, -2.0, 1.57),
+        (4.0, 0.8, 0.0),
+        (8.0, 1.0, -1.57),
+        (8.0, -0.5, 1.57),
+        (5.0, 5.0, 3.14),
+        (3.0, 4.0, 1.57),
+        (4.0, 5.0, 0.0),
+        (5.0, 3.0, -1.57),
+        (4.0, 0.8, 3.14),
+        (-4.0, 3.5, -1.57),
+        (-4.0, 0.0, 1.57)
+    ]
+
+    #--- Follow waypoints
+    goals = []
+    for waypoint in waypoints:
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = 'map'
+        goal_pose.header.stamp = navigator.get_clock().now().to_msg()
+        goal_pose.pose.position.x = waypoint[0]
+        goal_pose.pose.position.y = waypoint[1]
+        quaternion = tf_transformations.quaternion_from_euler(0.0, 0.0, waypoint[2])
+        goal_pose.pose.orientation.x = quaternion[0]
+        goal_pose.pose.orientation.y = quaternion[1]
+        goal_pose.pose.orientation.z = quaternion[2]
+        goal_pose.pose.orientation.w = quaternion[3]
+
+        goals.append(goal_pose)
+
+    navigator.followWaypoints(goals)
+
+    # Getting navigation feedback
+    i = 0
+    while not navigator.isTaskComplete():
+        i += 1
+        feedback = navigator.getFeedback()
+        if feedback and i % 5 == 0:
+            print('Distance remaining: {:.2f} meters'.format(feedback.distance_remaining))
+        
+    #--- Shutdown
+    result = navigator.getResult()
+    if result == navigator.Result.SUCCEEDED:
+        print('Navigation succeeded!')
+    elif result == navigator.Result.CANCELED:
+        print('Navigation was canceled.')
+    elif result == navigator.Result.FAILED:
+        print('Navigation failed.')
+
+    navigator.lifecycleShutdown()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
 
