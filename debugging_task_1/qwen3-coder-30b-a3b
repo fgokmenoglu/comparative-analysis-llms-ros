@@ -1,1 +1,93 @@
+Looking at this code, I can identify the specific bug causing the robot to spin in place.
+🔍 1. Specific Bug Identified
+Missing w component in quaternion assignment - In the waypoints loop, you're only assigning x, y, and z components but leaving w unset (defaults to 0.0):
+pose.pose.orientation.x = q[0]
+pose.pose.orientation.y = q[1]
+pose.pose.orientation.z = q[2]
+# Missing: pose.pose.orientation.w = q[3]
+🧠 2. Why This Causes Spinning
+The quaternion [x, y, z, w] = [q[0], q[1], q[2], 0] creates an invalid quaternion where w = 0. A valid quaternion must satisfy the constraint:
+x² + y² + z² + w² = 1
+When w = 0, this becomes:
+x² + y² + z² = 1
+However, since you're assigning x, y, z from quaternion_from_euler(0, 0, z_angle) with a valid output, but forgetting w, you end up with:
+o	q[0], q[1], q[2] = values from quaternion_from_euler
+o	q[3] = 0 (missing!)
+So the quaternion becomes [x, y, z, 0] instead of [x, y, z, w].
+This results in a non-unit quaternion that's invalid for rotation description, leading to navigation system instability and spinning behavior.
+✅ 3. Fully Corrected Script
+Here's the complete fixed version:
+#!/usr/bin/env python3
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
 
+def main():
+    #--- Init
+    rclpy.init()
+    navigator = BasicNavigator()
+
+    #--- Set initial pose
+    initial_pose = PoseStamped()
+    initial_pose.header.frame_id = 'map'
+    initial_pose.header.stamp = navigator.get_clock().now().to_msg()
+    initial_pose.pose.position.x = 0.0
+    initial_pose.pose.position.y = 0.0
+    initial_pose.pose.position.z = 0.0
+    # Initial pose orientation (0 yaw) is set correctly
+    q_init = tf_transformations.quaternion_from_euler(0, 0, 0)
+    initial_pose.pose.orientation.x = q_init[0]
+    initial_pose.pose.orientation.y = q_init[1]
+    initial_pose.pose.orientation.z = q_init[2]
+    initial_pose.pose.orientation.w = q_init[3]
+    navigator.setInitialPose(initial_pose)
+
+    #--- Wait for Nav2
+    navigator.waitUntilNav2Active()
+
+    #--- Send Nav2 goal
+    # Define waypoints as (x, y, z_angle)
+    waypoints_data = [
+        (2.0, -2.0, 1.57), (4.0, 0.8, 0.0), (8.0, 1.0, -1.57), (8.0, -0.5, 1.57),
+        (5.0, 5.0, 3.14), (3.0, 4.0, 1.57), (4.0, 5.0, 0.0), (5.0, 3.0, -1.57),
+        (4.0, 0.8, 3.14), (-4.0, 3.5, -1.57), (-4.0, 0.0, 1.57)
+    ]
+   
+    waypoints = []
+    for (x, y, z_angle) in waypoints_data:
+        pose = PoseStamped()
+        pose.header.frame_id = 'map'
+        pose.header.stamp = navigator.get_clock().now().to_msg()
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.position.z = 0.0
+
+        q = tf_transformations.quaternion_from_euler(0, 0, z_angle)
+       
+        pose.pose.orientation.x = q[0]
+        pose.pose.orientation.y = q[1]
+        pose.pose.orientation.z = q[2]
+        pose.pose.orientation.w = q[3]  # <-- THIS LINE WAS MISSING
+        
+        waypoints.append(pose)
+
+    #--- Follow waypoints
+    navigator.followWaypoints(waypoints)
+
+    #--- Get navigation feedback (as requested in prompt)
+    while not navigator.isTaskComplete():
+        feedback = navigator.getFeedback()
+        pass
+
+    #--- Shutdown
+    result = navigator.getResult()
+    print(f"Navigation Result: {result}")
+   
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+The critical fix was adding the line:
+pose.pose.orientation.w = q[3]
+This ensures that every pose stamped message contains a properly normalized quaternion with all four components, enabling correct robot orientation control during navigation.
