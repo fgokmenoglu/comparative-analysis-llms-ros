@@ -1,0 +1,8 @@
+Act as a ROS 2 developer. Create a Python-based ROS 2 launch file named 'my_robot.launch.py'.
+
+** Requirements: **
+1. Start a `robot_state_publisher` node from the 'robot_state_publisher' package.
+2. Start a custom node named 'obstacle_avoider' from the 'my_robot_pkg' package.
+3. Place the 'obstacle_avoider' node in a namespace called 'navigation'.
+4. Pass a parameter named 'use_sim_time' with a value of 'True' to the 'robot_state_publisher' node.
+5. Remap the 'obstacle_avoiler' node's '/scan' topic to '/laser_scan'.
