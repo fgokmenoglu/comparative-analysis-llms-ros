@@ -1,0 +1,75 @@
+ROS 2 Software Architecture for Autonomous Mobile Robot
+1. List of Necessary ROS 2 Nodes and Responsibilities
+•	map_server:
+•	Description: Loads a pre-built static map of the environment.
+•	Responsibility: Publishes the map to /map topic.
+•	amcl (Adaptive Monte Carlo Localization):
+•	Description: Estimates the robot's pose within the map using sensor data and motion models.
+•	Responsibility: Subscribes to /scan, /odom, and /map. Publishes estimated pose to /amcl_pose.
+•	global_planner:
+•	Description: Generates a global path from the current pose to the goal pose.
+•	Responsibility: Subscribes to /map and /move_base_simple/goal. Publishes global path to /global_plan.
+•	local_planner:
+•	Description: Refines the global path into a feasible trajectory considering dynamic obstacles.
+•	Responsibility: Subscribes to /scan, /odom, and /global_plan. Publishes local path to /local_plan.
+•	base_controller:
+•	Description: Converts the local path into velocity commands for the robot's motors.
+•	Responsibility: Subscribes to /local_plan and /odom. Publishes velocity commands to /cmd_vel.
+•	lidar_driver:
+•	Description: Interfaces with the 2D LiDAR sensor.
+•	Responsibility: Publishes raw scan data to /scan.
+•	odometry_node:
+•	Description: Computes the robot's odometry based on wheel encoders.
+•	Responsibility: Publishes odometry data to /odom.
+•	goal_publisher:
+•	Description: Allows user input or other nodes to specify a goal pose.
+•	Responsibility: Publishes goal pose to /move_base_simple/goal.
+2. Key Topics, Message Types, and Node Interactions
+•	/map
+•	Message Type: nav_msgs/msg/OccupancyGrid
+•	Publisher: map_server
+•	Subscribers: amcl, global_planner
+•	/scan
+•	Message Type: sensor_msgs/msg/LaserScan
+•	Publisher: lidar_driver
+•	Subscribers: amcl, local_planner
+•	/odom
+•	Message Type: nav_msgs/msg/Odometry
+•	Publisher: odometry_node
+•	Subscribers: amcl, local_planner, base_controller
+•	/amcl_pose
+•	Message Type: geometry_msgs/msg/PoseWithCovarianceStamped
+•	Publisher: amcl
+•	Subscribers: Not used directly in this architecture, but can be used for debugging and visualization.
+•	/global_plan
+•	Message Type: nav_msgs/msg/Path
+•	Publisher: global_planner
+•	Subscribers: local_planner
+•	/local_plan
+•	Message Type: nav_msgs/msg/Path
+•	Publisher: local_planner
+•	Subscribers: base_controller
+•	/cmd_vel
+•	Message Type: geometry_msgs/msg/Twist
+•	Publisher: base_controller
+•	Subscribers: Robot's motor controllers (not explicitly modeled in this architecture).
+•	/move_base_simple/goal
+•	Message Type: geometry_msgs/msg/PoseStamped
+•	Publisher: goal_publisher
+•	Subscribers: global_planner
+3. Data Flow Explanation
+1.	Initialization:
+•	map_server loads the map and publishes it to /map.
+•	goal_publisher receives a goal pose from the user and publishes it to /move_base_simple/goal.
+2.	Localization:
+•	lidar_driver continuously scans the environment and publishes the data to /scan.
+•	odometry_node computes and publishes the robot's odometry to /odom.
+•	amcl subscribes to /scan, /odom, and /map to estimate the robot's pose and publishes the estimated pose to /amcl_pose.
+3.	Global Path Planning:
+•	global_planner subscribes to /map and /move_base_simple/goal to compute a global path and publishes it to /global_plan.
+4.	Local Path Planning:
+•	local_planner subscribes to /scan, /odom, and /global_plan to refine the global path into a local trajectory that avoids obstacles and publishes it to /local_plan.
+5.	Control:
+•	base_controller subscribes to /local_plan and /odom to generate velocity commands for the robot and publishes them to /cmd_vel.
+This architecture ensures that the robot navigates efficiently from its current location to the specified goal while avoiding obstacles dynamically.
+
