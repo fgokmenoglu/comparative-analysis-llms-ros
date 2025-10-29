@@ -1,1 +1,116 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Minimal example that uses the ``nav2_simple_commander`` package to drive a
+robot through a list of way‑points.  Only the *position* components of a pose
+are supplied; the required quaternion for the orientation is generated from the
+given yaw (the third value of each waypoint tuple).
+
+The script:
+1. Initializes rclpy and the BasicNavigator.
+2. Sets the robot’s initial pose (0, 0, 0) with a zero yaw.
+3. Waits until the Nav2 stack is up and ready.
+4. Sends a navigation goal for each waypoint, checking feedback while the
+   robot moves.
+5. Prints the final navigation result and shuts the node down cleanly.
+"""
+
+import rclpy
+from nav2_simple_commander.robot_navigator import BasicNavigator
+from geometry_msgs.msg import PoseStamped
+import tf_transformations
+import time
+
+def create_pose(x: float, y: float, yaw: float) -> PoseStamped:
+    """
+    Helper that builds a ``PoseStamped`` message from a position (x, y) and a
+    yaw angle (rad).  The z‑position is always 0.0 and the orientation is
+    converted to a quaternion.
+    """
+    pose = PoseStamped()
+    pose.header.frame_id = "map"
+    pose.header.stamp = rclpy.time.Time().to_msg()
+
+    # Position
+    pose.pose.position.x = x
+    pose.pose.position.y = y
+    pose.pose.position.z = 0.0
+
+    # Orientation (quaternion from yaw)
+    q = tf_transformations.quaternion_from_euler(0.0, 0.0, yaw)
+    pose.pose.orientation.x = q[0]
+    pose.pose.orientation.y = q[1]
+    pose.pose.orientation.z = q[2]
+    pose.pose.orientation.w = q[3]
+
+    return pose
+
+
+def main():
+    #--- Init
+    rclpy.init()
+    navigator = BasicNavigator()
+
+    #--- Set initial pose
+    initial_pose = create_pose(0.0, 0.0, 0.0)          # (x, y, yaw)
+    navigator.setInitialPose(initial_pose)
+
+    #--- Wait for Nav2
+    # Wait until the navigation stack is up and the map is received.
+    navigator.waitUntilNav2Active()
+    navigator.waitUntilNav2Ready()
+
+    #--- Send Nav2 goal
+    # (The first waypoint will be used as the initial goal – the loop below
+    #  will also send each waypoint sequentially.)
+    waypoints = [
+        (2.0, -2.0, 1.57),
+        (4.0, 0.8, 0.0),
+        (8.0, 1.0, -1.57),
+        (8.0, -0.5, 1.57),
+        (5.0, 5.0, 3.14),
+        (3.0, 4.0, 1.57),
+        (4.0, 5.0, 0.0),
+        (5.0, 3.0, -1.57),
+        (4.0, 0.8, 3.14),
+        (-4.0, 3.5, -1.57),
+        (-4.0, 0.0, 1.57)
+    ]
+
+    #--- Follow waypoints
+    for idx, (x, y, yaw) in enumerate(waypoints, start=1):
+        goal = create_pose(x, y, yaw)
+
+        # Send the goal to Nav2
+        navigator.goToPose(goal)
+
+        # Monitor the navigation task until it finishes.
+        while not navigator.isTaskComplete():
+            #--- Getting navigation feedback within the code (no need for printing) is recommended.
+            feedback = navigator.getFeedback()
+            # Feedback can be inspected or logged if desired; we keep it silent here.
+            rclpy.spin_once(navigator, timeout_sec=0.1)
+
+        # After each waypoint, retrieve the result to know whether we succeeded.
+        result = navigator.getResult()
+        if result == BasicNavigator.Result.SUCCEEDED:
+            rclpy.logging.get_logger('waypoint_logger').info(
+                f'Waypoint {idx}/{len(waypoints)} reached successfully.'
+            )
+        else:
+            rclpy.logging.get_logger('waypoint_logger').error(
+                f'Failed to reach waypoint {idx}/{len(waypoints)}. Result code: {result}'
+            )
+            # If a waypoint fails we break out of the loop – this mirrors typical
+            # behaviour where the mission is aborted on error.
+            break
+
+    #--- Shutdown
+    navigator.lifecycleShutdown()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
 
