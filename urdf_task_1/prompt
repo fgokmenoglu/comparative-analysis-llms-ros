@@ -1,0 +1,11 @@
+I need your help to create a robot description file for my robotics project. The following list is the criteria that you shall consider.
+
+1- The file is an XML file with .urdf extension.
+2- The name of the robot is my_robot.
+3- There will be three different materials; namely, grey, green and white. No need for transparency. The values of rgba should be chosen accordingly.
+4- The robot will have a base with a lidar on top of it. The base will be a box with the following dimensions (in meters), length: 0.6, width: 0.4 and height: 0.2.
+5- It will also have left and right wheels that are able to rotate. Last, the robot will have a caster wheel. Create appropriate links for these. Being appropriate means having proper geometry and origin. Regarding materials, base color will be green, wheels will be grey and lidar will be white.
+6- Create appropriate joints for the links. Pay attention to the parent and the child of any joint. Origin of the joint is another crucial thing that you shall consider.
+7- Create one final, virtual link called base footprint and the corresponding joint with the base.
+8- The robot description file will be visually inspected on RViz. Make sure that the developer who will use your .urdf XML file are able to see a robot on RViz.
+9- Finally pay attention the naming, format and like.
