@@ -1,0 +1,10 @@
+Act as a senior ROS 2 systems architect. Your task is to design a complete software architecture for an autonomous mobile robot.
+
+** System Goal: **
+The robot is a differential drive base with a 2D LiDAR. It needs to navigate a known map to a given goal pose while avoiding dynamic obstacles.
+
+** Your Deliverable: **
+Provide a detailed architectural plan that includes:
+1. A list of all necessary ROS 2 nodes and a brief description of each node's responsibility (e.g., map_server, amcl, planner, controller).
+2. A list of the key topics (e.g., /scan, /odom, /map, /cmd_vel, /goal_pose), their message types, and which nodes publish/subscribe to them.
+3. A brief explanation of the data flow, from sensor input to motor commands.
