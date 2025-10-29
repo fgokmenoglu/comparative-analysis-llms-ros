@@ -1,1 +1,39 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    """
+    ROS 2 Launch file for my_robot
+    
+    Launches:
+    - robot_state_publisher node with use_sim_time parameter
+    - obstacle_avoider node in navigation namespace with topic remapping
+    """
+    
+    # Robot State Publisher Node
+    robot_state_publisher_node = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        parameters=[{'use_sim_time': True}],
+        output='screen'
+    )
+    
+    # Obstacle Avoider Node
+    obstacle_avoider_node = Node(
+        package='my_robot_pkg',
+        executable='obstacle_avoider',
+        name='obstacle_avoider',
+        namespace='navigation',
+        remappings=[
+            ('/scan', '/laser_scan')
+        ],
+        output='screen'
+    )
+    
+    return LaunchDescription([
+        robot_state_publisher_node,
+        obstacle_avoider_node
+    ])
 
