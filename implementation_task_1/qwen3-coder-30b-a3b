@@ -1,1 +1,49 @@
+#include <memory>
+#include <rclcpp/rclcpp.hpp>
+#include <moveit/move_group_interface/move_group_interface.h>
+
+int main (int argc, char * argv[]) {
+    // Initialize ROS and create the Node
+    rclcpp::init(argc, argv);
+    auto node = rclcpp::Node::make_shared("hello_moveit");
+    
+    // Create a ROS logger
+    auto logger = node->get_logger();
+    
+    // Create the MoveIt MoveGroup Interface
+    moveit::planning_interface::MoveGroupInterface move_group(node, "panda_arm");
+    
+    // Set a target Pose
+    geometry_msgs::msg::Pose target_pose;
+    target_pose.position.x = 0.28;
+    target_pose.position.y = -0.2;
+    target_pose.position.z = 0.5;
+    target_pose.orientation.w = 1.0;  // Quaternion w component
+    
+    move_group.setPoseTarget(target_pose);
+    
+    // Create a plan to that target pose
+    moveit::planning_interface::MoveGroupInterface::Plan my_plan;
+    bool success = (move_group.plan(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    
+    if (!success) {
+        RCLCPP_ERROR(logger, "Planning failed!");
+        rclcpp::shutdown();
+        return 1;
+    }
+    
+    // Execute the plan
+    RCLCPP_INFO(logger, "Executing the plan...");
+    success = (move_group.execute(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    
+    if (!success) {
+        RCLCPP_ERROR(logger, "Execution failed!");
+        rclcpp::shutdown();
+        return 1;
+    }
+    
+    // Shutdown ROS
+    rclcpp::shutdown();
+    return 0;
+}
 
